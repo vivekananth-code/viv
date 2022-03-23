@@ -128,8 +128,4 @@ def download_and_join(
   
   
   
- 1)openssl s_client -connect nexusprod.corp.intranet:4567 -showcerts </dev/null | openssl x509 -outform pem > ca.pem
 
-
-
-2)openssl x509 -inform PEM -in ca.pem -out ca.crt
