@@ -1,0 +1,237 @@
+                                        Steps to deploy zookeeper on k8s
+
+
+1)	Create GKE Cluster on gcp with minimum requirements
+
+
+2)	Create manifest file to create zookeeper services and stateful sets
+
+
+3)	manifest file
+
+
+zookeeper.yaml
+
+
+
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: zk-cs
+  labels:
+    app: zk
+spec:
+  ports:
+  - port: 2181
+    name: client
+  selector:
+    app: zk
+---
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: zk-pdb
+spec:
+  selector:
+    matchLabels:
+      app: zk
+  maxUnavailable: 1
+---
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: zk
+spec:
+  serviceName: zk-hs
+  replicas: 3
+  updateStrategy:
+    type: RollingUpdate
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: zk
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: "app"
+                    operator: In
+                    values:
+                    - zk
+              topologyKey: "kubernetes.io/hostname"
+      containers:
+      - name: kubernetes-zookeeper
+        imagePullPolicy: Always
+        image: "gcr.io/google_containers/kubernetes-zookeeper:1.0-3.4.10"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "0.5"
+        ports:
+        - containerPort: 2181
+          name: client
+        - containerPort: 2888
+          name: server
+        - containerPort: 3888
+          name: leader-election
+        command:
+        - sh
+        - -c
+        - "start-zookeeper \
+          --servers=3 \
+          --data_dir=/var/lib/zookeeper/data \
+          --data_log_dir=/var/lib/zookeeper/data/log \
+          --conf_dir=/opt/zookeeper/conf \
+          --client_port=2181 \
+          --election_port=3888 \
+          --server_port=2888 \
+          --tick_time=2000 \
+          --init_limit=10 \
+          --sync_limit=5 \
+          --heap=512M \
+          --max_client_cnxns=60 \
+          --snap_retain_count=3 \
+          --purge_interval=12 \
+          --max_session_timeout=40000 \
+          --min_session_timeout=4000 \
+          --log_level=INFO"
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - "zookeeper-ready 2181"
+          initialDelaySeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - "zookeeper-ready 2181"
+          initialDelaySeconds: 10
+          timeoutSeconds: 5
+        volumeMounts:
+        - name: datadir
+          mountPath: /var/lib/zookeeper
+      securityContext:
+        runAsUser: 1000
+        fsGroup: 1000
+  volumeClaimTemplates:
+  - metadata:
+      name: datadir
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi
+
+
+
+4) copy the above file in vim editor and save it
+
+
+5) then use the command kubectl apply -f zookeeper.yaml
+
+
+6)	the output will be like this
+
+  
+  service "zk-hs" configured
+  service "zk-cs" configured
+  poddisruptionbudget "zk-pdb" configured
+  statefulset "zk" created
+
+
+7) then use this command to know the runnning pods in the label app=zk
+ 
+the output will be like this
+
+    
+ NAME      READY     STATUS              RESTARTS   AGE
+ 
+ zk-0      1/1       Running             0          32s
+ zk-1      0/1       ContainerCreating   0          12s
+ zk-1      0/1       Running   0         13s
+ zk-1      1/1       Running   0         30s
+ zk-2      0/1       Pending   0         0s
+ zk-2      0/1       Pending   0         0s
+ zk-2      0/1       ContainerCreating   0         0s
+ zk-2      0/1       Running   0         11s
+ zk-2      1/1       Running   0         30s
+
+
+8)	This creates four objects to manage the ZooKeeper ensemble.
+
+* A Headless Service, (zk-hs), is created to control the network domain of the ZooKeeper ensemble. 
+   The leader election and server ports for each ZooKeeper server are configured for the Service.
+
+* A Service, (zk-cs), is created to load balance client connections to ZooKeeper servers that are Running and Ready.
+  You should consider configuring your client to connect directly to the Service instead of connecting to the Pods individually. However, both approaches will work.
+ 
+*  PodDisruptionBudget, zk-pdb, is created to manage planned disruptions.
+   planned distrupition occururing drains, evictions, and managed node or image upgrades. zk-pdb specifies that the ensemble will tolerate only 1 planned disruption. Note that, even if you deploy an ensemble of 5 or more ZooKeeper servers, you should only plan for one planned disruption.
+   wth 5 or more servers you can tolerate an unplanned disruption that occurs concurrently with a planned disruption.
+
+* A StatefulSet, zk, is created to launch the ZooKeeper servers, each in its own Pod, and each with unique and stable network identities and storage.
+
+
+9) Testing the Ensemble
+
+
+$ (kubectl exec -ti zk-0 -- bash)     ---command
+
+	zokeeper@zk-0:/$ zkCli.
+	[zk:localhost:2181(CONNECTED) 1] create /hello world
+
+    Created /hello
+
+10)	From another Pod you can use the same technique to retrieve the value.
+
+
+
+    $ kubectl exec -ti zk-1 -- bash
+
+
+     zookeeper@zk-1:/$ zkCli.
+     zkCli.cmd  zkCli.sh
+     [zk: localhost:2181(CONNECTED) 0] get hello world
+     cZxid = 0x800000003 
+     ctime = Mon Jun 12 21:25:25 UTC 2017
+     mZxid = 0x800000003
+     mtime = Mon Jun 12 21:25:25 UTC 2017
+     pZxid = 0x800000003 
+     cversion = 0
+     dataVersion = 0
+     aclVersion = 0
+     ephemeralOwner = 0x0
+     dataLength = 5 	
+     numChildren = 0
+
+
+
+11) meaning of each services and their manifest files
+
+   Headless Service:
+
+     *    The zk-hs Headless Service will manage the domain of the ensemble. It has named ports, one for leader election and one for inter-server communication. These ports must correspond to the container ports specified in the StatefulSet and the parameters passed to the StatefulSet’s Pods’ command.
+     
+
+12) Client Service:
+
+     *   The zk-cs Service provides a load balanced Service allowing clients to connect to active ZooKeeper instances. You should consider allowing clients to connect directly to this service instead of using the FQDNs of the individual Pods in your connection string. The client port on the service must correspond to the container port specified in the StatefulSet and the parameters passed to the StatefulSet’s Pods’ command.  
+
+13)	Statefulsets:
+
+     *  The zk StatefulSet creates the requested number of replicas. You can modify the StatefulSet to change the resource requests and the number of Pods hosting ZooKeeper servers. You have to ensure that the container ports are consistent with the Services defined above and the parameters passed to the start-zookeeper script. You also have to ensure that the requested number of replicas corresponds to the --servers parameter.
+
+
+14) PodDisruptionBudget:
+
+     *  A PodDisruptionBudget is created, except in the zookeeper_micro.yaml manifest, to advertise the number of Pods that can be safely drained or evicted. When administrators apply managed node or base image updates, if they cordon and drain the node appropriately, this will ensure that the ensemble remains available throughout the procedure. For ZooKeeper, the correct MaxUnavailable setting is always 1. Even with the 5 server ensemble deployed by zookeeper.yaml, we want to ensure that we only allow one node to fail due to a planned disruption. This allows the ensemble to tolerate a concurrent unplanned disruption.
