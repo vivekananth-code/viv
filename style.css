@@ -142,5 +142,16 @@ SELECT
     ((RN2+1)%5) +1 GroupIndex, 
     SUM(CTE2.[count]) OVER (PARTITION BY ((RN2+1)%5)) CmlTotal 
 FROM CTE2
-  
 
+
+<form action="mailto:someone@example.com" enctype="text/plain" method="post">Name:<br /> E-mail:<br /> Comment:<br /> <input type="submit" value="Send" /> <input type="submit" value="Reset" /></form>
+
+
+Name:<br>
+
+E-mail:<br>
+
+Comment:<br>
+<br>
+<input type="submit" value="Send">
+<input type="reset" value="Reset">
