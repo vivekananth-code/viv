@@ -166,3 +166,34 @@ Comment:<br>
 <input type="text" name="comment" size="50"><br><br>
 <input type="submit" value="Send">
 <input type="reset" value="Reset">
+
+
+
+from loginpass.google import GoogleServiceAccount
+
+session = GoogleServiceAccount.from_service_account_file('your-google-conf.json', 'https://www.googleapis.com/auth/cloud-platform')
+
+
+import json
+from requests_toolbelt import MultipartEncoder
+
+bucket = 'your-bucket-name'
+url = 'https://www.googleapis.com/upload/storage/v1/b/{}/o?uploadType=multipart'.format(bucket)
+# file name to be saved in bucket
+name = 'foo/bar.jpg'
+
+metadata = {
+    'name': name,
+    'cacheControl': 'public, max-age=5184000'
+}
+
+# obj can be a file / bytes or anything that requests support
+obj = open('example.jpg', 'rb')
+files = [
+    ('file', (name, json.dumps(metadata), 'application/json')),
+    ('file', (name, obj, 'image/jpeg')),
+]
+encoder = MultipartEncoder(files)
+headers = {'Content-Type': encoder.content_type}
+# use the session created above
+resp = session.post(url, data=encoder, headers=headers)
